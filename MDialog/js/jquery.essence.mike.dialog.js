@@ -1,0 +1,1137 @@
+/**
+ * @name dialog弹出框，可以选择有无遮罩的基于bootstrap的弹出框
+ * @author mike
+ * @version 1.1.1
+ * 此插件目前属于测试版本，如有问题请联系我
+ */
+(function( window ){
+	
+	//传入window全局变量进来
+	//使全局变量变成局部变量，使得查找变量更快
+	//方便代码压缩，从而不影响使用
+	var win = window;
+	var document = win.document;
+	
+	//构造函数，使得每次初始化不需要new
+	var MDialog = function( options ){
+		return new MDialog.fn.init( options );
+	};
+	
+	//全局Data
+	MDialog.version = '1.1.1';
+	
+	//扩展原型，使得上面返回new对象 继承以下的方法和属性
+	MDialog.fn = MDialog.prototype = {
+		
+		/**
+		 * @access Public
+		 * @name 初始化插件
+		 * @param {object} options
+		 * @return {this} 
+		 */
+		init : function( options ){
+			var DOM, elem;
+			
+			//this.closeBoolean修复多处关闭事件而出现的问题
+			//this.top 修复IE下面 FixedEvent top值的问题
+			this.IE6 = !-[1,] && !win.XMLHttpRequest;
+			this.closeBoolean = false;
+			this.iframeId = null;
+			this.top = null;
+			
+			//默认项合并
+			this.config = this._cover( options, MDialog.defaults);
+			(win.MDialog.zIndex >= this.config.zIndex) ? win.MDialog.zIndex = win.MDialog.zIndex + 2 : win.MDialog.zIndex = this.config.zIndex;
+			
+			//检查是否重复设置弹窗id
+			if( this.config.id ){
+				elem = document.getElementById( this.config.id );
+				if( elem ){
+					return false;
+				}
+			}
+			
+			//创建MDialog的Element
+			this.DOM = DOM = this._createDOM();
+			
+			//设置css
+			DOM._body()._css({ 'width' : this.config.width, 'height' : this.config.height });
+			DOM._content()._padding( this.config.padding );
+			DOM._footer()._hide();
+			DOM._title()._css('cursor' , this.config.drag ? 'move' : 'auto');
+			
+			//是否锁屏，即有遮罩层
+			if( this.config.lock ){
+				this._createLock();
+			}
+			
+			DOM._wrap()._show();
+			
+			//初始化
+			this
+				._title( this.config.title )
+				._content( this.config.content )
+				._statusbar( this.config.statusbar )
+				._button( this.config.button )
+				._position( this.config.top, this.config.left )
+				._addEvent();
+				
+			//弹窗初始化后的回调函数
+			if( typeof this.config.init == 'function'){
+				this.config.init.call( this );
+			}
+		},
+		/**
+		 * @access    Public
+		 * @name      设置标题文字 并调整弹窗位置
+		 * @param     text     {String}     设置标题
+		 * @return    {this}
+		 */
+		title: function( text ){
+		 	this._title( text );
+		 	this._position( this.config.top, this.config.left, true );
+		 	return this;
+		},
+
+		/**
+		 * @access    Public
+		 * @name      设置是否隐藏标题, 并是否显示关闭按钮
+		 * @param     val     {Boolean}     是否显示关闭按钮
+		 * @return    {this}
+		 */
+		untitle: function( val ){
+			var DOM = this.DOM;
+			this.config.untitle = true;
+			val && ( this.config.unclose = true );
+			this._title( this.config.title );
+			this._position( this.config.top, this.config.left, true );
+			return this;
+		},
+
+		/**
+		 * @access    Public
+		 * @name      设置弹窗内容 并调整弹窗位置
+		 * @param     {Element}       设置内容
+		 * @return    {this}
+		 */
+		content: function( msg ){
+		 	this._content( msg );
+		 	this._position( this.config.top, this.config.left, true );
+		 	return this;
+		},
+
+		/**
+		 * @access    Public
+		 * @name      对话框左下脚添加复选框 并调整弹窗位置
+		 * @param     {Element}       设置内容
+		 * @return    {this}
+		 */
+		statusbar: function( msg ){
+			this._statusbar( msg );
+			this._position( this.config.top, this.config.left, true );
+		 	return this;
+		},
+
+		/**
+		 * @access    Public
+		 * @name      设置自动关闭弹窗
+		 * @example   {time}       {int}
+		 * @return    {this}
+		 */
+		time: function( time ){
+			var _this = this;
+			setTimeout( function(){ _this._closeEvent( _this.config.close ); }, time * 1000 );
+			return this;
+		},
+
+		/**
+		 * @access    Public
+		 * @name      关闭弹窗对外接口
+		 * @example   this.close();
+		 * @return    {this}
+		 */
+		close: function( callback ){
+			if ( typeof callback == 'function' ){
+				this.config.close = callback;
+			}
+			this._closeEvent( this.config.close );
+			return this;
+		},
+
+		/**
+		 * @access    Public
+		 * @name      增加锁屏
+		 * @example   this.lock();
+		 * @return    {this}
+		 */
+		lock: function(){
+			var DOM = this.DOM,
+				_this = this;
+			if ( !this.config.lock ){
+				this.config.lock = true;
+				this._createLock();
+				DOM._lock()._bind('dblclick', function(){ _this._closeEvent( _this.config.close ); });
+			}
+			return this;
+		},
+
+		/**
+		 * @access    Public
+		 * @name      解除锁屏
+		 * @example   this.unlock();
+		 * @return    {this}
+		 */
+		unlock: function(){
+			var DOM = this.DOM;
+			if ( this.config.lock ){
+				if ( this.config.lock ) document.body.removeChild( DOM._lock()[0] );
+				this.config.lock = false;
+			}
+			return this;
+		},
+
+		/**
+		 * @access    Public
+		 * @name      设置容器宽度,并重新调整弹窗位置
+		 * @example   this.width( 300 || '20em' );
+		 * @return    {this}
+		 */
+		width: function( val ){
+			this.config.width = val;
+			this._size( 'width', val );
+			return this;
+		},
+
+		/**
+		 * @access    Public
+		 * @name      设置容器高度,并重新调整弹窗位置
+		 * @example   this.height( 300 || '20em' );
+		 * @return    {this}
+		 */
+		height: function( val ){
+			this.config.height = val;
+			this._size( 'height', val );
+			return this;
+		},
+
+		/**
+		 * @access    Public
+		 * @name      设置容器padding，并重新调整弹窗位置
+		 * @example   this.padding( 0 || '10px 20px' );
+		 * @return    {this}
+		 */
+		padding: function( val ){
+			var DOM = this.DOM;
+			this.config.padding = val;
+			DOM._content()._padding( val );
+			this._position( this.config.top, this.config.left, true );
+			return this;
+		},
+
+		/**
+		 * @access    Public
+		 * @name      设置弹窗 top, left 位置
+		 * @example   this.left( 100, 100 );
+		 * @return    {this}
+		 */
+		position: function( top, left ){
+			var _top, _left;
+			_top = ( typeof top == 'number' ) ? top + 'px' : top;
+			_left = ( typeof left == 'number' ) ? left + 'px' : left;
+
+			this.config.top = _top;
+			this.config.left = _left;
+
+			this._position( this.config.top, this.config.left, true );
+			return this;
+		},
+
+		/**
+		 * @access    Public
+		 * @name      增加一个新的按钮, 并调整位置
+		 * @example   this.button( [{name:'按钮文字', callback:function(){ console.log('按下执行的函数') }, focus:true, disabled:true }] );
+		 * @return    {this}
+		 */
+		button: function( arr ){
+			if ( this._isArray( arr ) ){
+				this._button( arr );
+				this._position( this.config.top, this.config.left, true );
+			}
+			return this;
+		},
+
+		/**
+		 * @access    Public
+		 * @name      一个简单的提示信息
+		 * @example   this.msg( '欢迎使用 MDialog 对话框！' );
+		 * @return    {this}
+		 */
+		msg: function( msg ){
+			var DOM = this.DOM;
+
+			this.config.untitle = true;
+			this.config.unclose = true;
+			this.config.fixed = true;
+			this.config.padding = '10px 15px';
+			this.config.top = '50%';
+
+			DOM._content()._addClass('ui-MDialog-msg');
+			DOM._content()._padding( this.config.padding );
+			DOM._footer()._hide();
+
+			this._title( this.config.title );
+			this._content( msg );
+			this._position( this.config.top, this.config.left, true );
+			return this;
+		},
+
+		/**
+		 * @access Private
+		 * @name 默认项合并
+		 * @param {object} options,defaults
+		 * @return {options} 
+		 */
+		_cover : function( options, defaults ){
+			var i, options = options || {};
+			for( i in defaults){
+				if( options[i] === undefined ){
+					options[i] = defaults[i];
+				}
+			}
+			return options;
+		},
+		/**
+		 * @access Private
+		 * @name 设置标题文字
+		 * @param {string} text
+		 * @return {this} 
+		 */
+		_title : function( text ){
+			var DOM = this.DOM;
+			
+			DOM._title()._text( text );
+			if( this.config.untitle ){
+				DOM._title()._hide();
+				DOM._close()._addClass('untitle');
+				this.config.drag = false;
+			}
+			
+			this.config.unclose && DOM._close()._hide();
+			return this;
+		},
+		/**
+		 * @access Private
+		 * @name 设置弹窗内容
+		 * @param {string} html,text,htmlelement,url
+		 * @return {this} 
+		 */
+		_content : function( msg ){
+			var DOM = this.DOM;
+			if( this.config.iframe ){
+				this._createIframe( msg );
+			}else{
+				DOM._content()._html( msg );
+			}
+			return this;
+		},
+		/**
+		 * @access Private
+		 * @name 在弹窗底部添加复选框
+		 * @param {string} html
+		 * @return {this} 
+		 */
+		_statusbar : function( msg ){
+			var DOM = this.DOM;
+			if(msg != null){
+				DOM._footer()._show();
+				DOM._statusbar()._html( msg );
+			}
+			return this;
+		},
+		/**
+		 * @access Private
+		 * @name 设置弹窗的按钮
+		 * @param {array} arr
+		 * @return {this} 
+		 */
+		_button : function( arr ){
+			var _arr = arr || [],
+				_obj = ['name', 'callback', 'focus', 'disabled'];
+				
+			var getObj = function( arr ){
+				var obj = {};
+				for(var i = 0; i< _obj.length; i++){
+					obj[_obj[i]] = arr[i];
+				}
+				return obj;
+			};
+			
+			if( this.config.cancel != null){
+				_arr.unshift(getObj([ this.config.cancelVal, this.config.cancel, false, false]));
+			}
+			
+			if( this.config.ok != null){
+				_arr.unshift(getObj([ this.config.okVal, this.config.ok, true, false]));
+			}
+			
+			this._createButton( _arr );
+			
+			return this;
+		},
+		/**
+		 * @access Private
+		 * @name 绑定元素事件
+		 * @param {*} param_name
+		 * @return {this} 
+		 */
+		_addEvent : function(){
+			var DOM = this.DOM,
+				_this = this,
+				_domElem = this._sizzle( document ),
+				_winElem = this._sizzle( win );
+				
+			//关闭弹窗事件
+			DOM._close()._bind('click',function(){
+				_this._closeEvent( _this.config.close );
+			});
+			
+			if( this.config.lock ){
+				DOM._lock()._bind('dbclick',function(){
+					_this._closeEvent( _this.config.close );
+				});
+			}
+			
+			//IE下的fixed定位的问题
+			if( this.config.fixed && this.IE6 ){
+				_winElem()._bind('scroll',function(){
+					_this._fixedEvent();
+				});
+			}
+			
+			//设置焦点
+			DOM._wrap()._bind('mousedown',function(){
+				_this._focusEvent();
+			});
+			DOM._header()._bind('mousedown',function(){
+				DOM._wrap()._addClass('ui-MDialog-focus');
+			});
+			DOM._wrap()._bind('mouseup',function(){
+				DOM._wrap()._removeClass('ui-MDialog-focus');
+			});
+			
+			//自动关闭弹框
+			if( this.config.time ){
+				this.time( this.config.time );
+			}
+			
+			//绑定esc事件
+			if( this.config.esc ){
+				_domElem()._bind('keydown',function( event ){
+					var event = event || window.event,
+						which = event.which || event.keyCode;
+						
+					if( which == 27 ){
+						_this._closeEvent( _this.config.close );
+					}
+				});
+			}
+			
+			//绑定resize事件
+			if( this.config.resize ){
+				_winElem()._bind('resize',function(){
+					_this._resize();
+				});
+			}
+			
+			//绑定拖拽事件
+			if( this.config.drag ){
+				this._drag();
+			}
+			
+			return this;
+		},
+		/**
+		 * @access Private
+		 * @name 将templates模版写入到DOM中
+		 * @param {null} 
+		 * @return {this} 
+		 */
+		_createDOM : function(){
+			var tpl = document.createElement('div');
+			
+			//tpl的操作
+			tpl.innerHTML = MDialog.templates;
+			tpl.className = 'ui-MDialog-wrap';
+			if( this.config.id ){
+				tpl.setAttribute('id',this.config.id);
+			}
+			
+			document.body.appendChild(tpl);
+			
+			var DOM = {_wrap: this._sizzle( tpl )},
+				i = 0,
+				elem = tpl.getElementsByTagName('*'),
+				elemLen = elem.length;
+			
+			for(; i < elemLen; i++){
+				var name = elem[i].className.replace('ui-MDialog-','');
+				if( name ){
+					DOM['_' + name] = this._sizzle( elem[i] );
+				}
+			}
+			return DOM;
+		},
+		/**
+		 * @access Private
+		 * @name 创建锁屏
+		 * @param {null}
+		 * @return {this} 
+		 */
+		_createLock :function(){
+			var DOM = this.DOM,
+				tpl = document.createElement('div'),
+				winHeight = document.documentElement.clientHeight,
+				bodyHeight = document.documentElement.scrollHeight,
+				height = (winHeight > bodyHeight) ? winHeight + 'px' : bodyHeight + 'px';
+				IE6Select = '<iframe style="position:absolute;width:100%;height:100%;_filter:alpha(opacity=0);opacity=0;"></iframe>',
+				index = win.MDialog.zIndex - 1;
+				
+			tpl.className = 'ui-MDialog-lock';
+			if( this.IE6 ){
+				tpl.innerHTML = IE6Select;
+			}
+			document.body.appendChild(tpl);
+			
+			DOM._lock = this._sizzle(tpl);
+			
+			DOM._lock()._css({
+				'position':'absolute',
+				'top':'0',
+				'left':'0',
+				'width':'100%',
+				'height':height,
+				'backgroundColor':this.config.background,
+				'opacity':this.config.opacity,
+				'zIndex':index
+			});
+			
+			return this;
+		},
+		/**
+		 * @access Private
+		 * @name 创建按钮集合
+		 * @param {arr} [{name:"按钮文字",callback:function(){//回调函数},focus:true,disabled:true}]
+		 * @return {this} 
+		 */
+		_createButton : function( arr ){
+			var DOM = this.DOM,
+				i = 0,
+				_this = this,
+				arrLen = arr.length;
+				
+			for(; i < arrLen; i++){
+				var _elem = this._sizzle(document.createElement('button'));
+				
+				_elem()._text( arr[i].name );
+				if( arr[i].focus ){
+					_elem()._addClass('ui-MDialog-autofocus');
+				}
+				if( arr[i].disabled ){
+					_elem()._addClass('ui-MDialog-disabled');
+				}
+				
+				if( typeof arr[i].callback == 'function'){
+					var callback = function(obj){
+						return function(){
+							obj.call(_this);
+						};
+					}( arr[i].callback );
+					_elem()._bind('click',callback);
+				}else{
+					if( ! arr[i].disabled ){
+						_elem()._bind('click',function(){
+							_this._closeEvent( _this.config.close );
+						});
+					}
+				}
+				
+				DOM._bottom()[0].appendChild(_elem()[0]);
+				DOM._footer()._show();
+			}
+		},
+		/**
+		 * @name iframe弹窗
+		 * @param {string} iframe 的url
+		 * @return {this} 
+		 */
+		_createIframe : function( msg ){
+			var iframe, p,
+			    _this = this,
+			    DOM = this.DOM;
+
+			// iframe数据源
+			this.iframeId = 'MDialog_IFRAME_' + win.MDialog.zIndex;
+			win.MDialog.iframeData[this.iframeId] = this;
+
+			// iframe Loading
+			DOM._title()._text('Loading...');
+			DOM._body()._addClass('ui-MDialog-loading');
+
+			// 创建iframe
+			iframe = '<p class="loading-text">Loading...</p><iframe src="'+ msg +'" name="'+ this.iframeId +'" id="'+ this.iframeId +'" allowtransparency="true" scrolling="auto" frameborder="0" width="100%" height="100%" style="display: none;"></iframe>';
+			DOM._content()._html( iframe );
+			iframe = DOM._content()[0].getElementsByTagName('iframe')[0];
+			p = DOM._content()[0].getElementsByTagName('p')[0];
+			p.style.display = 'block';
+
+			// load 事件
+			this._sizzle( iframe )()._bind( 'load', function(){
+
+				//iframe 加载完成
+				iframe.style.display = 'block';
+				p.style.display = 'none';
+				DOM._title()._text(_this.config.title);
+				DOM._body()._removeClass('ui-MDialog-loading');
+
+				var test;
+				try {
+					test = document.getElementById(_this.iframeId).contentWindow.document;
+				} catch( e ){ };
+
+				if ( test ){
+					outWidth = ( _this.config.width != 'auto' ) ? _this.config.width : test.documentElement.scrollWidth + 'px',
+					outHeight = ( _this.config.height != 'auto' ) ? _this.config.height : test.documentElement.scrollHeight + 'px';
+
+					DOM._body()._css({ width: 'auto', height: 'auto' });
+					DOM._content()._css({ 'width': outWidth, 'height': outHeight });
+				} else {
+					DOM._body()._css({ width: 'auto', height: 'auto' });
+					DOM._content()._css({ 'width': _this.config.width , 'height': _this.config.height });
+				}
+
+				_this._position( _this.config.top, _this.config.left, true );
+
+				//iframe 载入完成回调函数
+				if ( typeof _this.config.oniframeload == 'function' ) _this.config.oniframeload.call( _this, test );
+
+			});
+		},
+		/**
+		 * @access Private
+		 * @name 设置弹窗的位置
+		 * @param {string} top,left
+		 * @param {boolean} resize 如果resize是true,则不设置z-index
+		 * @return {this} 
+		 */
+		_position : function( top, left, resize){
+			var DOM = this.DOM,
+				winWidth = document.documentElement.clientWidth,
+				winHeight = document.documentElement.clientHeight,
+				bodyHeight = document.documentElement.scrollHeight,
+				scrollTop = win.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop,
+				changeTop = top.toString().indexOf('%'),
+				changeLeft = left.toString().indexOf('%'),
+				_top,_left,elemWidth,elemHeight;
+				
+			(this.IE6) ? DOM._wrap()._css('position','absolute') : DOM._wrap()._css('position',(this.config.fixed) ? 'fixed' : 'absolute');
+			
+			elemWidth = parseInt(DOM._wrap()._getCurrentStyle('width'));
+			elemHeight = parseInt(DOM._wrap()._getCurrentStyle('height'));
+			
+			var getPer = function(num,val,elem){
+				var px = (val * (num/100)) - (elem/2);
+				if(px > (val - elem)){
+					return val - elem;
+				}
+				return px;
+			};
+			
+			_left = ( changeLeft > -1 ) ? getPer( parseInt( left ), winWidth, elemWidth ) + 'px' : left ;
+			_top = ( changeTop > -1 ) ? getPer( parseInt( top ), winHeight, elemHeight ) + 'px' : top ;
+			
+			if( !this.config.fixed && bodyHeight > winHeight){
+				_top = parseInt(_top) + scrollTop + 'px';
+			}
+			this.top = _top;
+			
+			//修正IE下，第一次打开top值的问题
+			if(this.IE6 && this.config.fixed){
+				_top = parseInt(_top) + scrollTop + 'px';
+			}
+			
+			DOM._wrap()._css({'left':_left,'top':_top});
+			if(!resize){
+				DOM._wrap()._css('zIndex',win.MDialog.zIndex);
+			}
+			
+			return this;
+		},
+		/**
+		 * @access Parivate
+		 * @name 将DOM遍历的元素保存到方法中，并返回对象本身
+		 * @param {elem} param_name
+		 * @return {this} 
+		 */
+		_sizzle : function(elem){
+			var that = this;
+			return function(){
+				that[0] = elem;
+				return that;
+			};
+		},
+		/**
+		 * @access Parivate
+		 * @name 关闭弹窗，并设置回调
+		 * @param {function} callback
+		 * @return {this}
+		 */
+		_closeEvent : function( callback ){
+			var DOM = this.DOM,
+				_this = this;
+			
+			if( !this.config.closeBoolean ){
+				document.body.removeChild(DOM._wrap()[0]);
+				if(this.config.lock){
+					document.body.removeChild(DOM._lock()[0]);
+				}
+				if( typeof callback == 'function'){
+					callback.call(this);
+				}
+			}
+			
+			if( this.config.iframe ){
+				delete MDialog.iframeData[this.iframeId];
+			}
+			
+			this.closeBoolean = true;
+			
+			delete MDialog;
+			
+			return this;
+		},
+		/**
+		 * @access Private
+		 * @name 处理IE6下不能fixed的问题
+		 * @param {null} param_name
+		 * @return {this} 
+		 */
+		_fixedEvent : function(){
+			var DOM = this.DOM,
+				scrollTop = window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop,
+				top = parseFloat(this.top);
+				
+			DOM._wrap()._css('top',(top + scrollTop) + 'px');
+			
+			return this;
+		},
+		/**
+		 * @access Private
+		 * @name 设置焦点，点击谁，谁在最上方
+		 * @param {null} param_name
+		 * @return {this} 
+		 */
+		_focusEvent : function(){
+			var DOM = this.DOM;
+			
+			win.MDialog.zIndex = win.MDialog.zIndex + 2;
+			
+			DOM._wrap()._css('zIndex',win.MDialog.zIndex);
+			
+			return this;
+		},
+		/**
+		 * @access   Private
+		 * @name     页面resize时重新调整弹窗     
+		 * @return   {this}
+		 */
+		_resize: function(){
+
+			if ( this.config.lock ){
+				var winHeight = document.documentElement.clientHeight,
+				    bodyHeight = document.documentElement.scrollHeight,
+				    height = ( winHeight > bodyHeight ) ? winHeight + 'px' : bodyHeight + 'px',
+				    DOM = this.DOM;
+
+				if ( DOM._lock() ) DOM._lock()._css( 'height', height );
+			}
+
+			this._position( this.config.top, this.config.left, true );
+			return this;
+		},
+
+		/**
+		 * @access   Private
+		 * @name     页面拖拽功能
+		 * @desc     绑定在 document 对象上是为了防止拖拽过快脱节的现象。
+		 * @example  this._drag();      
+		 * @return   {this}
+		 */
+		_drag: function(){
+			var DOM = this.DOM,
+			    fixed = this.config.fixed,
+			    IE6 = this.IE6,
+			    _domElem = this._sizzle( document ),
+			    _wrapW = 0,
+			    _wrapH = 0,
+			    _x = 0,
+			    _y = 0;
+
+			//拖动过程
+			var dargMove = function( event ){
+				var event = event || window.event,
+				    x = event.clientX - _x,
+				    y = event.clientY - _y,
+				    documentH = document.documentElement.scrollHeight,
+				    screenH = document.documentElement.clientHeight,
+				    winX = document.documentElement.clientWidth - _wrapW,
+				    winY = ( fixed && !IE6 ) ? screenH : ( ( screenH > documentH ) ? screenH : documentH ),
+				    winY = winY -  _wrapH,
+				    left, top;
+
+				left = ( x < 0 ) ? 0 : ( x >= 0 && x <= winX ) ? x : winX;
+				top = ( y < 0 ) ? 0 : ( y >= 0 && y <= winY ) ? y : winY;
+
+				DOM._wrap()._css({ 'left': left + 'px', 'top': top + 'px' });
+			};
+
+			//拖动结束
+			var dargStop = function(){
+				_domElem()._unbind( 'mousemove', dargMove );
+			};
+
+			//拖动开始
+			var dargStart = function( event ){
+				var event = event || window.event,
+				    _top = parseFloat( DOM._wrap()._getCurrentStyle('top') ),
+				    _left = parseFloat( DOM._wrap()._getCurrentStyle('left') );
+
+				_x = event.clientX - _left;
+				_y = event.clientY - _top;
+				
+				_wrapW = parseInt( DOM._wrap()._getCurrentStyle('width') );
+			    _wrapH = parseInt( DOM._wrap()._getCurrentStyle('height') );
+				
+				_domElem()._bind( 'mousemove', dargMove );
+				_domElem()._bind( 'mouseup', dargStop );
+			};
+
+			//绑定拖动
+			DOM._header()._bind( 'mousedown', dargStart );
+
+			return this;
+		},
+
+		/**
+		 * @access   Private
+		 * @name     获取默认样式
+		 * @param    name    {String}    获取默认样式名的属性  
+		 * @example  DOM._body()._getCurrentStyle( 'width' );
+		 * @return   {CSS VALUE}
+		 */
+		_getCurrentStyle: function( name ){
+			var css, width, height, elem = this[0];
+			if ( 'defaultView' in document && 'getComputedStyle' in document.defaultView ) {
+				css = document.defaultView.getComputedStyle( elem, false )[name];
+			} else {
+				if ( name == 'width' || name == 'height' ){
+					var oRect = elem.getBoundingClientRect(),
+						width = oRect.right - oRect.left,
+						height = oRect.bottom - oRect.top;
+					( name == 'width' ) ? css = width : css = height;
+				} else {
+					css = elem.currentStyle[name];
+				}
+			}
+			return css;
+		},
+
+		/**
+		 * @access   Private
+		 * @name     给元素设置样式
+		 * @param    name     {String}     样式名
+		 * @param    value    {String}     样式属性
+		 * @param    name     {Object}     样式采用对象字面量的方法来写。
+		 * @example  DOM._css( 'width', '600px' );
+		 * @example  DOM._css({ 'width':'600px', 'height':'600px' });
+		 * @return   {this}
+		 */
+		_css: function( name, value ){
+			var style = '', elem = this[0], obj = arguments[0];
+			if ( typeof name === 'string' ){
+				if ( typeof value !== undefined ){
+					( name == 'opacity' ) ? this._opacity( value ) : elem.style[name] = value;
+				}
+			} else {
+				for ( i in obj ){
+					( i == 'opacity' ) ? this._opacity( obj[i] ) : elem.style[i] = obj[i];
+				}
+			}
+			return this;
+		},
+		/**
+		 * @access   Private
+		 * @name     设置弹窗padding的值。
+		 * @param    {Number || String}
+		 * @example  DOM._content()._padding( 5 || '10px 10px' );
+		 * @return   {this}
+		 */
+		_padding: function( value ){
+			if ( typeof value === 'string' ){
+				this._css( 'padding', value );
+			} else {
+				this._css( 'padding', value + 'px' );
+			}
+			return this;
+		},
+
+		/**
+		 * @access    Public
+		 * @name      设置容器宽，高，并重新调整弹窗位置
+		 * @param     this._size( 'width', '200px' );
+		 * @return    {this}
+		 */
+		_size: function( name, val ){
+			var value, DOM = this.DOM;
+			( typeof val == 'string' ) ? value = val : value = val + 'px';
+			DOM._body()._css( name, value );
+			this._position( this.config.top, this.config.left, true );
+			return this;
+		},
+		
+		/**
+		 * @access   Private
+		 * @name     设置元素的样式透明度，已做兼容性处理。
+		 * @param    {value}     {Number}
+		 * @example  DOM._opacity( 0.5 );
+		 * @return   {this}
+		 */
+		_opacity: function( value ){
+			var elem = this[0],
+			    isOpacity = 'opacity' in document.documentElement.style;
+			if ( typeof value !== undefined ){
+				isOpacity ? elem.style.opacity = value : elem.style.filter = "Alpha(opacity=" + value * 100 + ")";
+			}
+			return this;
+		},
+
+		/**
+		 * @access   Private
+		 * @name     给元素添加class名
+		 * @param    {name}     {String}
+		 * @example  DOM._wrap()._addClass( 'className' );
+		 * @return   {this}
+		 */
+		_addClass: function( name ){
+			var elem = this[0],
+			    className = elem.className.replace( /^\s+|\s+$/g, '' );
+			elem.className = className + ' ' + name;
+			return this;
+		},
+
+		/**
+		 * @access   Private
+		 * @name     给元素移出class名
+		 * @param    {name}     {String}
+		 * @example  DOM._wrap()._removeClass( 'className' );
+		 * @return   {this}
+		 */
+		_removeClass: function( name ){
+			var elem = this[0],
+			    className = elem.className.replace( name, '' ).replace( /^\s+|\s+$/g, '' );
+			elem.className = className;
+			return this;
+		},
+
+		/**
+		 * @access   Private
+		 * @name     将元素设置为显示
+		 * @param    {Null}
+		 * @return   {this}
+		 */
+		_show: function(){
+			this._css( 'display', 'block' );
+			return this;
+		},
+
+		/**
+		 * @access   Private
+		 * @name     将元素设置为隐藏
+		 * @param    {Null}
+		 * @return   {this}
+		 */
+		_hide: function(){
+			this._css( 'display', 'none' );
+			return this;
+		},
+
+		/**
+		 * @access   Private
+		 * @name     将文本插入到元素中
+		 * @param    {text}     {String}
+		 * @return   {this}
+		 */
+		_text: function( text ){
+			var elem = this[0];
+			if ( document.all ){
+				elem.innerText = text;
+			} else {
+				elem.textContent = text;
+			}
+			return this;
+		},
+
+		/**
+		 * @access   Private
+		 * @name     将HTML Elemnt元素插入到元素中
+		 * @param    {html}     {HTML Elements}
+		 * @return   {this}
+		 */
+		_html: function( html ){
+			var elem = this[0];
+			elem.innerHTML = '';
+
+			if ( html.nodeType && html.nodeType == 1 ){
+				elem.appendChild( html );
+			}
+
+			if ( html.nodeType && html.nodeType == 3 || typeof html == "string" ){
+				elem.innerHTML = html;
+			}
+
+			return this;
+		},
+
+		/**
+		 * @access   Private
+		 * @name     检测传入的是否数组
+		 * @param    {arr}     {Array}
+		 * @return   {Boolean}
+		 */
+		_isArray: function( arr ){
+			return Object.prototype.toString.call(arr) === '[object Array]';
+		},
+
+		/**
+		 * @access   Private
+		 * @name     给元素绑定事件
+		 * @param    {evt}    	事件类型
+		 * @param    {fn}		执行事件
+		 * @return   {this}
+		 */
+		_bind: function( evt, fn ){
+			var elem = this[0];
+			if ( elem.addEventListener ){
+				elem.addEventListener( evt, fn, false );
+			} else {
+				elem.attachEvent( 'on'+evt, fn );
+			}
+			return this;
+		},
+
+		/**
+		 * @access   Private
+		 * @name     给元素卸载事件
+		 * @param    {evt}    	事件类型
+		 * @param    {fn}		卸载事件
+		 * @return   {this}
+		 */
+		_unbind: function( evt, fn ){
+			var elem = this[0];
+			if ( elem.removeEventListener ){
+				elem.removeEventListener( evt, fn, false );
+			} else {
+				elem.detachEvent( 'on'+evt, fn );
+			}
+			return this;
+		}
+	};
+	
+	//讲fn.init()方法的原型给MDialog
+	MDialog.fn.init.prototype = MDialog.fn;
+	
+	//获取当前iframe打开的窗体
+	MDialog.iframeData = {};
+	MDialog.getIfame = function( name ){
+		if( !name ){
+			return false;
+		}
+		return MDialog.iframeData[name];
+	};
+	
+	//MDialog的模版
+	MDialog.templates =
+	'<div class="MDialog-wrapper">' +
+		'<table class="ui-MDialog-table">' +
+			'<tbody>' +
+				'<tr>' +
+					'<td>' +
+						'<div class="ui-MDialog-header">' +
+							'<a class="ui-MDialog-close" href="javascript:void(0);">x</a>' +
+							'<div class="ui-MDialog-title"></div>' +
+						'</div>' +
+					'</td>' +
+				'</tr>' +
+				'<tr>' +
+					'<td>' +
+						'<div class="ui-MDialog-body">' +
+							'<div class="ui-MDialog-content"></div>' +
+						'</div>' +
+					'</td>' +
+				'</tr>' +
+				'<tr>' +
+					'<td>' +
+						'<div class="ui-MDialog-footer">' +
+							'<div class="ui-MDialog-statusbar"></div>' +
+							'<div class="ui-MDialog-bottom"></div>' +
+							'<div style="clear:both;height:0;overflow:hidden;"></div>' +
+						'</div>' +
+					'</td>' +
+				'</tr>' +
+			'</tbody>' +
+		'</table>' +
+	'</div>';
+	
+	//默认参数
+	MDialog.defaults = {
+		title: '\u6d88\u606f',      //默认标题消息
+		untitle: false,             //是否显示标题
+		content: 'Loading...',      //默认内容
+		statusbar: null,            //默认弹窗左下角的内容
+		init: null,                 //默认弹窗加载之后的回调函数
+		close: null,                //默认点击关闭按钮之后的回调函数
+		unclose: false,             //是否显示关闭按钮
+		width: 'auto',              //默认宽度
+		height: 'auto',             //默认高度
+		padding: '20px 15px',       //默认填充
+		lock: false,                //是否支持锁屏
+		background: '#000',         //默认锁屏背景色
+		opacity: 0.3,               //默认锁屏透明度
+		fixed: false,               //是否开启定位
+		esc: true,                  //是否支持esc
+		time: null,                 //默认自动关闭时间
+		left: '50%',                //默认弹窗距离左边的距离
+		top: '38.2%',               //默认弹窗距离顶部的距离
+		zIndex: 1992,               //默认弹窗的层级
+		id: null,                   //防止重复弹出
+		ok: null,                   //点击ok按钮之后的回调函数
+		cancel: null,               //默认点击取消按钮之后的回调函数
+		okVal: '\u786e\u5b9a',      //确定按钮文字
+		cancelVal: '\u53d6\u6d88',  //取消按钮文字
+		button: null,               //自定义按钮
+		resize: true,               //是否绑定resize
+		data: null,                 //用户协助传递内容
+		iframe: false,              //传递的是否是ifame
+		oniframeload: null,         //默认记载玩iframe的回调函数
+		drag: true                  //是否支持拖拽
+	};
+	
+	//支持AMD加载
+	if( typeof define === 'function' && define.amd ){
+		define( 'MDialog', [], function(){
+			return MDialog;
+		});
+	}
+	
+	//返回对象给全局
+	win.MDialog = $MYDialog = MDialog;
+}(window));

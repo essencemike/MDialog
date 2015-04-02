@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>essence Dialog</title>
+		<link rel="stylesheet" href="css/MDialog.css" />
+		<script type="text/javascript" src="js/jquery.essence.mike.dialog.js" ></script>
+		<script>
+			window.onload = function(){
+				
+				var btn = document.getElementsByTagName("button")[0];
+				
+				btn.onclick = function(){
+					
+					$MYDialog({
+						title: '我来测试',      //默认标题消息
+						content: 'Loading...',      //默认内容
+						width: '500px',              //默认宽度
+						height: '400px',             //默认高度
+						padding: '20px 15px',       //默认填充
+						id: "text",                   //防止重复弹出
+						button: [],               //自定义按钮
+					});
+				};
+			};
+		</script>
+	</head>
+	<body>
+		<button>运行</button>
+	</body>
+</html>
